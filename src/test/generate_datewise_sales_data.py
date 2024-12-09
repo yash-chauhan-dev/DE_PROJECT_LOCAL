@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from resources.dev import config
 
-customer_ids = list(range(1, 21))
+customer_ids = list(range(1, 51))
 store_ids = list(range(121, 124))
 product_data = {
     "quaker oats": 212,
@@ -19,9 +19,9 @@ product_data = {
     "nutrella": 40
 }
 sales_persons = {
-    121: [1, 2, 3],
-    122: [4, 5, 6],
-    123: [7, 8, 9]
+    121: [id for id in range(1, 16)],
+    122: [id for id in range(16, 31)],
+    123: [id for id in range(31, 51)]
 }
 
 
