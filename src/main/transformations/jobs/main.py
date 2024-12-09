@@ -7,6 +7,7 @@ from src.main.utility.encrypt_decrypt import *
 from src.main.utility.my_sql_session import get_mysql_connection
 from src.main.utility.s3_client_object import *
 from src.main.utility.logging_config import *
+from src.main.utility.spark_session import spark_session
 
 # Keys to connect to AWS S3 Bucket
 aws_access_key = config.aws_access_key
@@ -40,7 +41,7 @@ if csv_files:
     statement = f"""
         select distinct file_name from
         {config.database_name}.{config.product_staging_table}
-        where file_name in ({str(total_csv_files)[1:-1]}) and status='I
+        where file_name in ({str(total_csv_files)[1:-1]}) and status='I'
     """
     logger.info(f"dynamically created statement: {statement}")
     cursor.execute(statement)
@@ -113,3 +114,19 @@ if all_files:
 else:
     logger.error("There is no data to process")
     raise Exception("There is no data to process")
+
+logger.info("**************Listing the File******************")
+logger.info("List of csv files that needs to be processed %s", csv_files)
+
+logger.info("**************Creating Spark Session******************")
+
+spark = spark_session()
+
+logger.info("**************Spark Session Created******************")
+
+# Check the required column in the schema of csv file
+# If not required columns keep it in error files
+# Else union all the data in one dataframes
+
+logger.info(
+    "**************Checking Schema for data loaded in s3******************")
