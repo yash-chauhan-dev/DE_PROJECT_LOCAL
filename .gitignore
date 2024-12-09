@@ -1,3 +1,7 @@
 venv
 keys.json
 *.rtf
+
+config.py
+
+.vscode
