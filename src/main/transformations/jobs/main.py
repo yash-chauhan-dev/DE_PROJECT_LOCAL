@@ -1,7 +1,11 @@
+from email import header
+from os import error
+import shutil
 from threading import local
 from urllib import response
 from resources.dev import config
 from src.main.download.aws_file_download import S3FileDownloader
+from src.main.move.move_files import move_s3_to_s3
 from src.main.read.aws_read import S3Reader
 from src.main.utility.encrypt_decrypt import *
 from src.main.utility.my_sql_session import get_mysql_connection
@@ -130,3 +134,47 @@ logger.info("**************Spark Session Created******************")
 
 logger.info(
     "**************Checking Schema for data loaded in s3******************")
+
+correct_files = []
+
+for data in csv_files:
+    data_schema = spark.read.format("csv").options(
+        header=True).load(data).columns
+    logger.info(f"Schema for the {data} is {data_schema}")
+    logger.info(f"Mandatory columns schema is {config.mandatory_columns}")
+    missing_columns = set(config.mandatory_columns) - set(data_schema)
+    logger.info(f"Missing columns are {missing_columns}")
+
+    if missing_columns:
+        error_files.append(data)
+    else:
+        logger.info(f"No missing column for the {data}")
+        correct_files.append(data)
+
+logger.info(
+    f"************ List of correct files **************{correct_files}")
+logger.info(f"************ List of error files **************{error_files}")
+logger.info(
+    f"************ Moving Error Data to Error Directory if Any **************")
+
+error_folder_local_path = config.error_folder_path_local
+if error_files:
+    for file_path in error_files:
+        if os.path.exists(file_path):
+            file_name = os.path.basename(file_path)
+            destination_path = os.path.join(error_folder_local_path, file_name)
+
+            shutil.move(file_path, destination_path)
+            logger.info(
+                f"Moved {file_name} from s3 file path to {destination_path}")
+
+            source_prefix = config.s3_source_directory
+            destination_prefix = config.s3_error_directory
+
+            message = move_s3_to_s3(
+                s3_client, config.bucket_name, source_prefix, destination_prefix, file_name)
+            logger.info(f"{message}")
+        else:
+            logger.error(f"'{file_path}' does not exist")
+else:
+    logger.info("*********** There is no file path available ****************")
