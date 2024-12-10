@@ -1,4 +1,6 @@
+import datetime
 from email import header
+from fileinput import filename
 from os import error
 import shutil
 from threading import local
@@ -12,6 +14,8 @@ from src.main.utility.my_sql_session import get_mysql_connection
 from src.main.utility.s3_client_object import *
 from src.main.utility.logging_config import *
 from src.main.utility.spark_session import spark_session
+from pyspark.sql.types import StructType, StructField, IntegerType, FloatType, StringType, DateType
+from pyspark.sql.functions import concat_ws, lit
 
 # Keys to connect to AWS S3 Bucket
 aws_access_key = config.aws_access_key
@@ -177,4 +181,80 @@ if error_files:
         else:
             logger.error(f"'{file_path}' does not exist")
 else:
-    logger.info("*********** There is no file path available ****************")
+    logger.info("*********** There is no error files available ****************")
+
+# Additional files needs to be takeen care of
+# Determine extra columns
+
+# Before runningg process, staging table needs to be updated with ststus as Active(A) or Inactive(I)
+logger.info(
+    "********** Updating product staging table, that we have started the process ************")
+insert_statements = []
+db_name = config.database_name
+current_date = datetime.datetime.now()
+formatted_date = current_date.strftime("%Y-%m-%d %H:%M:%S")
+if correct_files:
+    for file in correct_files:
+        file_name = os.path.basename(file)
+        statement = f"""
+            INSERT INTO {db_name}.{config.product_staging_table}
+            (file_name, file_location, created_date, status)
+            VALUES ('{file_name}', '{file_name}', "{formatted_date}", 'A')
+        """
+        insert_statements.append(statement)
+    logger.info(
+        f"Insert statement created for staging table --- {insert_statements}")
+    logger.info("************ Connecting with MySQL Server ***************")
+    connection = get_mysql_connection()
+    cursor = connection.cursor()
+    logger.info(
+        "****************** MySQL Server Connected Successfully *************")
+    for statement in insert_statements:
+        cursor.execute(statement)
+        connection.commit()
+    cursor.close()
+    connection.close()
+else:
+    logger.info("*************** There is no file to process *************")
+    raise Exception(
+        "************* No Data Available With Corrrect Files ************")
+
+logger.info(
+    "***************** Fixing Extra Column Coming From Source ***************")
+
+schema = StructType([
+    StructField("customer_id", IntegerType(), True),
+    StructField("store_id", IntegerType(), True),
+    StructField("product_name", StringType(), True),
+    StructField("sales_date", DateType(), True),
+    StructField("sales_person_id", IntegerType(), True),
+    StructField("price", FloatType(), True),
+    StructField("quantity", IntegerType(), True),
+    StructField("total_cost", FloatType(), True),
+    StructField("additional_column", StringType(), True)
+])
+
+final_df_to_process = spark.createDataFrame([], schema=schema)
+
+for data in correct_files:
+    data_df = spark.read.format('csv').options(
+        header=True, inferSchema=True).load(data)
+    data_schema = data_df.columns
+    extra_columns = list(set(data_schema)-set(config.mandatory_columns))
+    logger.info(f"Extra columns present at source is {extra_columns}")
+    if extra_columns:
+        data_df = data_df.withColumn(
+            "additional_column", concat_ws(",", *extra_columns)).select("customer_id", "store_id", "product_name",
+                                                                        "sales_date", "sales_person_id", "price", "quantity", "total_cost", "additional_column")
+        logger.info(f"Processed {data} and added 'additional_column'")
+    else:
+        data_df = data_df.withColumn(
+            "additional_column", lit(None)).select("customer_id", "store_id", "product_name",
+                                                   "sales_date", "sales_person_id", "price", "quantity", "total_cost", "additional_column")
+
+    final_df_to_process = final_df_to_process.union(data_df)
+
+logger.info(
+    "*********** Final DataFrame from source which will be going to processing *******************")
+print(final_df_to_process.count())
+final_df_to_process.show()
