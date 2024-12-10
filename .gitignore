@@ -5,3 +5,5 @@ keys.json
 config.py
 
 .vscode
+
+*.pyc
