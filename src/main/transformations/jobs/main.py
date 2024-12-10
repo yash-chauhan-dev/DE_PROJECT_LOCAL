@@ -1,6 +1,7 @@
 import datetime
 from email import header
 from fileinput import filename
+from itertools import product
 from os import error
 import shutil
 from threading import local
@@ -9,6 +10,8 @@ from resources.dev import config
 from src.main.download.aws_file_download import S3FileDownloader
 from src.main.move.move_files import move_s3_to_s3
 from src.main.read.aws_read import S3Reader
+from src.main.read.database_read import DatabaseReader
+from src.main.transformations.jobs.dimension_tables_join import join_dimension_tables
 from src.main.utility.encrypt_decrypt import *
 from src.main.utility.my_sql_session import get_mysql_connection
 from src.main.utility.s3_client_object import *
@@ -258,3 +261,54 @@ logger.info(
     "*********** Final DataFrame from source which will be going to processing *******************")
 print(final_df_to_process.count())
 final_df_to_process.show()
+
+# Enrich the data from all dimension table also create a datamart
+# for sales_team and their incentive, address, and all.
+# Another datamart for customer who bought how much each aadys of month
+# for every month there should be a file and inside that there should be a
+# store_id based segeregation
+
+
+# Connecting with DatabaseReader
+database_client = DatabaseReader(config.url, config.properties)
+
+# creating df for all table
+# customer_table
+logger.info(
+    "**************** Loading customer table into customer_table_df *****************")
+customer_table_df = database_client.create_dataframe(
+    spark, config.customer_table_name)
+
+# product_table
+logger.info(
+    "**************** Loading product table into product_table_df *****************")
+product_table_df = database_client.create_dataframe(
+    spark, config.product_table)
+
+# product_staging_table
+logger.info(
+    "**************** Loading product staging table into product_staging_table_df *****************")
+product_staging_table_df = database_client.create_dataframe(
+    spark, config.product_staging_table)
+
+# sales_team_table
+logger.info(
+    "**************** Loading sales team table into sales_team_table_df *****************")
+sales_team_table_df = database_client.create_dataframe(
+    spark, config.sales_team_table)
+
+# store table
+logger.info(
+    "**************** Loading store table into store_table_df *****************")
+store_table_df = database_client.create_dataframe(
+    spark, config.store_table)
+
+s3_customer_store_sales_df_join = join_dimension_tables(
+    final_df_to_process,
+    customer_table_df,
+    store_table_df,
+    sales_team_table_df
+)
+
+logger.info("************* Final Enriched Data ***********")
+s3_customer_store_sales_df_join.show()
